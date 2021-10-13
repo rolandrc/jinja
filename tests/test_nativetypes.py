@@ -2,6 +2,7 @@ import math
 
 import pytest
 
+from jinja2 import Environment
 from jinja2.exceptions import UndefinedError
 from jinja2.nativetypes import NativeEnvironment
 from jinja2.nativetypes import NativeTemplate
@@ -11,6 +12,11 @@ from jinja2.runtime import Undefined
 @pytest.fixture
 def env():
     return NativeEnvironment()
+
+
+@pytest.fixture
+def regular_env():
+    return Environment()
 
 
 def test_is_defined_native_return(env):
@@ -147,3 +153,124 @@ def test_no_intermediate_eval(env):
 def test_spontaneous_env():
     t = NativeTemplate("{{ true }}")
     assert isinstance(t.environment, NativeEnvironment)
+
+
+def test_do_not_repeat_nodes(env):
+    """`native_concat` duplicated the first two nodes if it got a list."""
+    t = env.from_string(
+        """
+        {%- macro m(b) -%}
+            {{- 'a' -}}
+            {%- if b -%}
+                {#- The `if` stops the optimizer from joining the strings. -#}
+                {#- This macro has to produce multiple nodes. -#}
+                {{- 'b' -}}
+            {%- endif -%}
+            {{- 'c' -}}
+        {%- endmacro -%}
+        {{- m(true) -}}
+    """
+    )
+    result = t.render()
+    # This produced "ababc".
+    assert result == "abc"
+
+
+def test_macro_still_works_with_strings(env, regular_env):
+    code = """
+        {%- macro m(v) -%}
+            start{{ v }}middle{{ v }}end
+        {%- endmacro -%}
+        {{- m(data) -}}
+    """
+    template_native = env.from_string(code)
+    template_regular = regular_env.from_string(code)
+    data = "test"
+    result_native = template_native.render(data=data)
+    result_regular = template_regular.render(data=data)
+    assert result_native == result_regular == "starttestmiddletestend"
+
+
+def test_macro_returns_int(env):
+    t = env.from_string(
+        """
+        {%- macro m() -%}
+            {{- 123 -}}
+        {%- endmacro -%}
+        {{- m() * 2 -}}
+    """
+    )
+    result = t.render()
+    # If the macro returns a string, this is `123123`.
+    assert result == 246
+
+
+def test_macro_returns_list(env):
+    t = env.from_string(
+        """
+        {%- macro m(x) -%}
+            {{- x[1] -}}
+        {%- endmacro -%}
+        {{- m(data)[1] -}}
+    """
+    )
+    data = [[1, 2], [3, 4]]
+    result = t.render(data=data)
+    assert result == 4
+
+
+def test_for_recursive_still_works_with_strings(env, regular_env):
+    code = """
+        {%- for item in data recursive -%}
+            {{- item.value -}}
+            {%- if item.children -%}
+                {{- loop(item.children) -}}
+            {%- endif -%}
+        {%- endfor -%}
+    """
+    data = [
+        {"value": "0"},
+        {
+            "value": "1",
+            "children": [
+                {"value": "2"},
+                {"value": "3"},
+            ],
+        },
+        {
+            "value": "4",
+            "children": [
+                {"value": "5"},
+            ],
+        },
+        {"value": "6"},
+    ]
+    template_native = env.from_string(code)
+    template_regular = regular_env.from_string(code)
+    result_native = template_native.render(data=data)
+    result_regular = template_regular.render(data=data)
+    assert result_native == result_regular == "0123456"
+
+
+def test_recursive_with_native_type(env):
+    t = env.from_string(
+        """
+        {%- for item in data recursive -%}
+            {%- if item.child -%}
+                {{- item.value + loop(item.child) -}}
+            {%- else -%}
+                {{- item.value -}}
+            {%- endif -%}
+        {%- endfor -%}
+    """
+    )
+    data = [
+        {
+            "value": 1,
+            "child": [
+                {"value": 2},
+            ],
+        },
+    ]
+    result = t.render(data=data)
+    assert result == 3

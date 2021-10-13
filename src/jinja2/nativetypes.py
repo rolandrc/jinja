@@ -1,7 +1,4 @@
 import typing as t
-from ast import literal_eval
-from itertools import chain
-from itertools import islice
 
 from . import nodes
 from .compiler import CodeGenerator
@@ -9,33 +6,7 @@ from .compiler import Frame
 from .compiler import has_safe_repr
 from .environment import Environment
 from .environment import Template
-
-
-def native_concat(values: t.Iterable[t.Any]) -> t.Optional[t.Any]:
-    """Return a native Python type from the list of compiled nodes. If
-    the result is a single node, its value is returned. Otherwise, the
-    nodes are concatenated as strings. If the result can be parsed with
-    :func:`ast.literal_eval`, the parsed value is returned. Otherwise,
-    the string is returned.
-
-    :param values: Iterable of outputs to concatenate.
-    """
-    head = list(islice(values, 2))
-
-    if not head:
-        return None
-
-    if len(head) == 1:
-        raw = head[0]
-        if not isinstance(raw, str):
-            return raw
-    else:
-        raw = "".join([str(v) for v in chain(head, values)])
-
-    try:
-        return literal_eval(raw)
-    except (ValueError, SyntaxError, MemoryError):
-        return raw
+from .utils import native_concat
 
 
 class NativeCodeGenerator(CodeGenerator):
@@ -74,6 +45,26 @@ class NativeCodeGenerator(CodeGenerator):
     ) -> None:
         if finalize.src is not None:
             self.write(")")
+
+    def return_buffer_contents(
+        self, frame: Frame, force_unescaped: bool = False
+    ) -> None:
+        """Return the buffer contents of the frame."""
+        if not force_unescaped:
+            if frame.eval_ctx.volatile:
+                self.writeline("if context.eval_ctx.autoescape:")
+                self.indent()
+                self.writeline(f"return Markup(native_concat({frame.buffer}))")
+                self.outdent()
+                self.writeline("else:")
+                self.indent()
+                self.writeline(f"return native_concat({frame.buffer})")
+                self.outdent()
+                return
+            elif frame.eval_ctx.autoescape:
+                self.writeline(f"return Markup(native_concat({frame.buffer}))")
+                return
+        self.writeline(f"return native_concat({frame.buffer})")
 
 
 class NativeEnvironment(Environment):

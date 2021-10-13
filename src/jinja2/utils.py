@@ -4,8 +4,11 @@ import os
 import re
 import typing as t
 import warnings
+from ast import literal_eval
 from collections import abc
 from collections import deque
+from itertools import chain
+from itertools import islice
 from random import choice
 from random import randrange
 from threading import Lock
@@ -25,6 +28,63 @@ missing: t.Any = type("MissingType", (), {"__repr__": lambda x: "missing"})()
 internal_code: t.MutableSet[CodeType] = set()
 
 concat = "".join
+
+
+def native_concat(values: t.Iterable[t.Any]) -> t.Optional[t.Any]:
+    """Return a native Python type from the list of compiled nodes. If
+    the result is a single node, its value is returned. Otherwise, the
+    nodes are concatenated as strings. If the result can be parsed with
+    :func:`ast.literal_eval`, the parsed value is returned. Otherwise,
+    the string is returned.
+
+    :param values: Iterable of outputs to concatenate.
+    """
+    if type(values) is list:
+        values = (v for v in values)
+
+    head = list(islice(values, 2))
+
+    if not head:
+        return None
+
+    if len(head) == 1:
+        raw = head[0]
+        if not isinstance(raw, str):
+            return raw
+    else:
+        raw = "".join([str(v) for v in chain(head, values)])
+
+    try:
+        return literal_eval(raw)
+    except (ValueError, SyntaxError, MemoryError):
+        return raw
+
+
+def native_concat_alternative(outputs: t.Iterable[t.Any]) -> t.Optional[t.Any]:
+    """Return a native Python type from the list of compiled nodes. If
+    the result is a single node, its value is returned. Otherwise, the
+    nodes are concatenated as strings. If the result can be parsed with
+    :func:`ast.literal_eval`, the parsed value is returned. Otherwise,
+    the string is returned.
+
+    :param outputs: Iterable of outputs to concatenate.
+    """
+    values = list(outputs)
+
+    if not values:
+        return None
+
+    if len(values) == 1:
+        raw = values[0]
+        if not isinstance(raw, str):
+            return raw
+    else:
+        raw = "".join([str(v) for v in values])
+
+    try:
+        return literal_eval(raw)
+    except (ValueError, SyntaxError, MemoryError):
+        return raw
 
 
 def pass_context(f: F) -> F:

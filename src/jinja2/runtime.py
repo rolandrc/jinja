@@ -20,6 +20,7 @@ from .utils import concat
 from .utils import internalcode
 from .utils import missing
 from .utils import Namespace  # noqa: F401
+from .utils import native_concat  # noqa: F401
 from .utils import object_type_repr
 from .utils import pass_eval_context
 
@@ -50,6 +51,7 @@ exported = [
     "TemplateRuntimeError",
     "missing",
     "concat",
+    "native_concat",
     "escape",
     "markup_join",
     "str_join",
